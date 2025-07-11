@@ -8,11 +8,17 @@ ARG GID=1000
 RUN groupadd -g $GID jovyan && \
     useradd -u $UID -g $GID -m jovyan
 
-# Instalar dependências básicas incluindo sudo
+# Instalar dependências básicas incluindo sudo e ferramentas para terminal
 RUN apt-get update && \
     apt-get install -y \
     pciutils wget cmake git build-essential libncurses5-dev libncursesw5-dev libsystemd-dev libudev-dev libdrm-dev pkg-config \
     sudo \
+    bash \
+    bash-completion \
+    less \
+    nano \
+    vim \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Dar permissão sudo ao usuário jovyan sem senha
@@ -53,25 +59,62 @@ RUN mkdir /project && \
 
 # Mudar para o usuário jovyan
 USER jovyan
+
 ENV PATH="/home/jovyan/.local/bin:${PATH}"
 WORKDIR /home/jovyan
-
 RUN mkdir /home/jovyan/.config
 
 # Instalar browsers do Playwright e dependências com sudo
 RUN playwright install
 RUN sudo playwright install-deps
 
+# Configurar o bash para o usuário jovyan
+RUN echo 'export TERM=xterm-256color' >> /home/jovyan/.bashrc && \
+    echo 'export SHELL=/bin/bash' >> /home/jovyan/.bashrc && \
+    echo 'set -o vi' >> /home/jovyan/.bashrc && \
+    echo 'bind "set completion-ignore-case on"' >> /home/jovyan/.bashrc && \
+    echo 'bind "set show-all-if-ambiguous on"' >> /home/jovyan/.bashrc && \
+    echo 'bind "set colored-stats on"' >> /home/jovyan/.bashrc && \
+    echo 'bind "set colored-completion-prefix on"' >> /home/jovyan/.bashrc && \
+    echo 'bind "set menu-complete-display-prefix on"' >> /home/jovyan/.bashrc && \
+    echo 'shopt -s histappend' >> /home/jovyan/.bashrc && \
+    echo 'export HISTCONTROL=ignoredups:erasedups' >> /home/jovyan/.bashrc && \
+    echo 'export HISTSIZE=10000' >> /home/jovyan/.bashrc && \
+    echo 'export HISTFILESIZE=10000' >> /home/jovyan/.bashrc
+
+# Configurar inputrc para melhorar a experiência do terminal
+RUN echo 'set editing-mode emacs' > /home/jovyan/.inputrc && \
+    echo 'set completion-ignore-case on' >> /home/jovyan/.inputrc && \
+    echo 'set show-all-if-ambiguous on' >> /home/jovyan/.inputrc && \
+    echo 'set colored-stats on' >> /home/jovyan/.inputrc && \
+    echo 'set colored-completion-prefix on' >> /home/jovyan/.inputrc && \
+    echo 'set menu-complete-display-prefix on' >> /home/jovyan/.inputrc && \
+    echo '"\e[A": history-search-backward' >> /home/jovyan/.inputrc && \
+    echo '"\e[B": history-search-forward' >> /home/jovyan/.inputrc && \
+    echo '"\e[C": forward-char' >> /home/jovyan/.inputrc && \
+    echo '"\e[D": backward-char' >> /home/jovyan/.inputrc && \
+    echo 'Control-l: clear-screen' >> /home/jovyan/.inputrc
+
 # Criar arquivo de configuração do Jupyter para desabilitar o Jedi
 RUN mkdir -p /home/jovyan/.jupyter && echo "c.Completer.use_jedi = False" >> /home/jovyan/.jupyter/jupyter_notebook_config.py
+
+# Configurar o terminal no JupyterLab
+RUN mkdir -p /home/jovyan/.jupyter/lab/user-settings/@jupyterlab/terminal-extension && \
+    echo '{\
+    "fontFamily": "monospace",\
+    "fontSize": 13,\
+    "theme": "dark",\
+    "cursorBlink": true,\
+    "shutdownOnClose": false,\
+    "closeOnExit": false,\
+    "scrollback": 1000\
+    }' > /home/jovyan/.jupyter/lab/user-settings/@jupyterlab/terminal-extension/plugin.jupyterlab-settings
 
 # Configurar tema Material Darker automaticamente
 RUN mkdir -p /home/jovyan/.jupyter/lab/user-settings/@jupyterlab/apputils-extension && \
     echo '{"theme": "Material Darker"}' > /home/jovyan/.jupyter/lab/user-settings/@jupyterlab/apputils-extension/themes.jupyterlab-settings
 
-
 # Configurar formatação de código
-
 # Install JupyterLab LSP and Python Language Server
 RUN pip install jupyterlab-lsp
 RUN pip install --no-cache-dir 'python-lsp-server[flake8]'
@@ -93,6 +136,10 @@ RUN mkdir -p /home/jovyan/.jupyter/lab/user-settings/@ryantam626/jupyterlab_code
         }\
     }\
     }' > /home/jovyan/.jupyter/lab/user-settings/@ryantam626/jupyterlab_code_formatter/settings.jupyterlab-settings
+
+# Configurar variáveis de ambiente para o terminal
+ENV TERM=xterm-256color
+ENV SHELL=/bin/bash
 
 EXPOSE 8888
 
