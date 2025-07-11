@@ -40,19 +40,6 @@ RUN pip install jlab-enhanced-cell-toolbar
 RUN pip install jupyterlab-spreadsheet-editor
 RUN pip install jupyterlabcodetoc
 
-# Install JupyterLab LSP and Python Language Server
-RUN pip install jupyterlab-lsp
-RUN pip install python-lsp-server
-
-# Instalar python-lsp-server com plugins extras
-RUN pip install --no-cache-dir \
-    'python-lsp-server[all]' \
-    pylsp-mypy \
-    pyls-flake8 \
-    python-lsp-black \
-    python-lsp-ruff \
-    pylsp-rope
-
 # Instalar o Playwright
 RUN pip install playwright
 
@@ -66,7 +53,10 @@ RUN mkdir /project && \
 
 # Mudar para o usuário jovyan
 USER jovyan
+ENV PATH="/home/jovyan/.local/bin:${PATH}"
 WORKDIR /home/jovyan
+
+RUN mkdir /home/jovyan/.config
 
 # Instalar browsers do Playwright e dependências com sudo
 RUN playwright install
@@ -79,7 +69,22 @@ RUN mkdir -p /home/jovyan/.jupyter && echo "c.Completer.use_jedi = False" >> /ho
 RUN mkdir -p /home/jovyan/.jupyter/lab/user-settings/@jupyterlab/apputils-extension && \
     echo '{"theme": "Material Darker"}' > /home/jovyan/.jupyter/lab/user-settings/@jupyterlab/apputils-extension/themes.jupyterlab-settings
 
+
 # Configurar formatação de código
+
+# Install JupyterLab LSP and Python Language Server
+RUN pip install jupyterlab-lsp
+RUN pip install --no-cache-dir 'python-lsp-server[flake8]'
+
+# Criar arquivo de configuração pycodestyle
+RUN echo '[pycodestyle]\n\
+max-line-length = 120\n\
+ignore = E203, E303, E402\n\
+exclude = .git,pycache,.pytest_cache,.tox,venv,*.egg\n\
+statistics = True\n\
+count = True\
+' > /home/jovyan/.config/pycodestyle
+
 RUN mkdir -p /home/jovyan/.jupyter/lab/user-settings/@ryantam626/jupyterlab_code_formatter && \
     echo '{\
     "preferences": {\
@@ -88,43 +93,6 @@ RUN mkdir -p /home/jovyan/.jupyter/lab/user-settings/@ryantam626/jupyterlab_code
         }\
     }\
     }' > /home/jovyan/.jupyter/lab/user-settings/@ryantam626/jupyterlab_code_formatter/settings.jupyterlab-settings
-
-# Configurar LSP settings
-RUN mkdir -p /home/jovyan/.jupyter/lab/user-settings/@krassowski/jupyterlab-lsp && \
-    echo '{\
-    "language_servers": {\
-        "pylsp": {\
-            "serverSettings": {\
-                "pylsp.plugins.flake8.enabled": true,\
-                "pylsp.plugins.mypy.enabled": true,\
-                "pylsp.plugins.mypy.live_mode": true,\
-                "pylsp.plugins.pycodestyle.enabled": false,\
-                "pylsp.plugins.mccabe.enabled": false,\
-                "pylsp.plugins.pyflakes.enabled": false,\
-                "pylsp.plugins.ruff.enabled": true\
-            }\
-        }\
-    }\
-}' > /home/jovyan/.jupyter/lab/user-settings/@krassowski/jupyterlab-lsp/settings.jupyterlab-settings
-
-# Criar arquivo de configuração mypy
-RUN echo '[mypy]\n\
-check_untyped_defs = true\n\
-disallow_untyped_defs = true\n\
-disallow_incomplete_defs = true\n\
-disallow_untyped_decorators = true\n\
-no_implicit_optional = true\n\
-warn_redundant_casts = true\n\
-warn_unused_ignores = true\n\
-warn_return_any = true\n\
-warn_unreachable = true\
-' > /home/jovyan/.mypy.ini
-
-# Criar arquivo de configuração flake8
-RUN echo '[flake8]\n\
-max-line-length = 88\n\
-extend-ignore = E203\
-' > /home/jovyan/.flake8
 
 EXPOSE 8888
 
