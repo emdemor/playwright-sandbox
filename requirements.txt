@@ -1,0 +1,16 @@
+pydantic
+pydantic_settings
+geopy
+pandas
+pyarrow
+psycopg2-binary
+sqlalchemy
+loguru
+fake-useragent
+random-user-agent
+unidecode
+sqlalchemy[asyncio]
+asyncpg
+openai
+litellm
+tokencost
