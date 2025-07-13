@@ -164,3 +164,4 @@ cython_debug/
 .env
 project/proxies.txt
 proxies.txt
+*/**/*.Trash*
