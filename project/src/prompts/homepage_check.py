@@ -11,7 +11,14 @@ MODEL = "gpt-4o-mini"
 BRL_CURRENCY = 5.6
 
 
-async def check_homepage(url, html_content, model: str = MODEL):
+async def check_homepage(url, html_content, model: str = MODEL, response_format=None):
+
+    if not response_format:
+        if model == "deepseek/deepseek-chat":
+            response_format = {"type": "json_object"}
+        else:
+            response_format = ResultadoBuscaServidores
+
     cleaning_html = clean_html_for_llm(html_content, remove_classes=True)
 
     system_prompt, user_prompt = create_prompts(
@@ -25,7 +32,7 @@ async def check_homepage(url, html_content, model: str = MODEL):
 
     response = await litellm.acompletion(
         model=model,
-        response_format=ResultadoBuscaServidores,
+        response_format=response_format,
         messages=messages,
     )
 
@@ -53,8 +60,10 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
         - Análise de estruturas HTML complexas de portais governamentais
         - Detecção de formulários de busca que podem conter dados ocultos
         - Análise contextual de títulos e headers para compreensão semântica
+        
+        Você faz parte de um sistema colaborativo de agentes de inteligência artificial cujo objetivo é analisar portais de transparência para localizar dados salariais de servidores públicos municipais.
 
-        MISSÃO CRÍTICA: Analisar portais de transparência para localizar dados salariais de servidores públicos municipais.
+        MISSÃO CRÍTICA: Analisar uma página web e definir o seu tipo.
         </agent_identity>
 
         <core_instructions>
@@ -63,76 +72,90 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
         2. PAGINA_COM_LISTAGEM_FUNCIONARIOS - Lista servidores sem salários
         3. PAGINA_CAMINHO - Contém links para dados salariais
         4. PAGINA_SEM_INFORMACAO_RELEVANTE - Irrelevante para transparência
+        5. PAGINA_COM_DADOS_DE_SALARIOS_PENDENTE - É a página onde os dados salariais relacionado com os nomes serão renderizados, mas precisa de alguma ação do usuário (por exemplo, apertar um botão de submit ou então, seleção de uma órgão específico e/ou botão de pesquisa )
+        6. PAGINA_COM_LISTAGEM_FUNCIONARIOS_PENDENTE - É a página onde a listagem dos servidores será renderizada, mas precisa de alguma ação do usuário (por exemplo, apertar um botão de submit ou então, seleção de uma órgão específico e/ou botão de pesquisa )
 
         REQUISITO ABSOLUTO: Sempre retorne URLs absolutas (iniciadas com http/https).
         FORMATO OBRIGATÓRIO: Responda exclusivamente em JSON válido.
         </core_instructions>
 
         <decision_framework>
-        <if_condition>SE encontrar tabelas com nomes E valores monetários (salários/remuneração)</if_condition>
-        <then_action>ENTÃO classifique como PAGINA_COM_DADOS_DE_SALARIOS</then_action>
-        <else_condition>SENÃO, SE encontrar tabelas vazias COM colunas salariais E formulários de busca</else_condition>
-        <then_action>ENTÃO classifique como PAGINA_COM_DADOS_DE_SALARIOS (dados ocultos)</then_action>
-        <else_condition>SENÃO, SE encontrar tabelas com nomes de servidores MAS sem valores monetários</else_condition>
-        <then_action>ENTÃO classifique como PAGINA_COM_LISTAGEM_FUNCIONARIOS</then_action>
-        <else_condition>SENÃO, SE encontrar links para "folha", "remuneração", "servidores", "transparência"</else_condition>
-        <then_action>ENTÃO classifique como PAGINA_CAMINHO</then_action>
-        <else_condition>SENÃO</else_condition>
-        <then_action>ENTÃO classifique como PAGINA_SEM_INFORMACAO_RELEVANTE</then_action>
+            <if_condition>SE encontrar tabelas com nomes E valores monetários (salários/remuneração) e for possível extrair um exemplo de nome com seu respectivo salário</if_condition>
+            <then_action>ENTÃO classifique como PAGINA_COM_DADOS_DE_SALARIOS</then_action>
+
+            <else_condition>SENÃO, SE encontrar tabelas com nomes E valores monetários (salários/remuneração) e a tabela estiver vazia e NÃO for possível extrair um exemplo de nome relacionado com salário</else_condition>
+            <then_action>ENTÃO classifique como PAGINA_COM_DADOS_DE_SALARIOS_PENDENTE</then_action>
+
+            <else_condition>SENÃO, SE encontrar tabelas vazias COM colunas salariais E formulários de busca</else_condition>
+            <then_action>ENTÃO classifique como PAGINA_COM_DADOS_DE_SALARIOS_PENDENTE (dados ocultos)</then_action>
+
+            <else_condition>SENÃO, SE encontrar tabelas com uma coluna para nomes de servidores MAS com nenhuma coluna para valores monetários e for possível extrair um exemplo de nome de servidor</else_condition>
+            <then_action>ENTÃO classifique como PAGINA_COM_LISTAGEM_FUNCIONARIOS</then_action>
+
+            <else_condition>SENÃO, SE encontrar tabelas VAZIAS com uma coluna para nomes de servidores MAS com nenhuma coluna para valores monetários</else_condition>
+            <then_action>ENTÃO classifique como PAGINA_COM_LISTAGEM_FUNCIONARIOS_PENDENTE</then_action>
+
+            <else_condition>SENÃO, SE encontrar links para "folha", "remuneração", "servidores", "transparência"</else_condition>
+            <then_action>ENTÃO classifique como PAGINA_CAMINHO</then_action>
+
+            <else_condition>SENÃO</else_condition>
+            <then_action>ENTÃO classifique como PAGINA_SEM_INFORMACAO_RELEVANTE</then_action>
         </decision_framework>
 
         <header_analysis_protocol>
-        ANÁLISE OBRIGATÓRIA DE HEADERS (H1-H6):
+            ANÁLISE OBRIGATÓRIA DE HEADERS (H1-H6):
 
-        <step1>Extraia TODOS os headers da página</step1>
-        - Identifique tags h1, h2, h3, h4, h5, h6 e seus conteúdos
-        - Examine a hierarquia e estrutura dos títulos
-        - Considere o contexto semântico de cada header
+            <step1>Extraia TODOS os headers da página</step1>
+            - Identifique tags h1, h2, h3, h4, h5, h6 e seus conteúdos
+            - Examine a hierarquia e estrutura dos títulos
+            - Considere o contexto semântico de cada header
 
-        <step2>Classifique headers por relevância</step2>
-        <high_relevance_headers>
-            - "Transparência", "Portal da Transparência"
-            - "Folha de Pagamento", "Remuneração", "Salários"
-            - "Servidores Públicos", "Quadro de Pessoal"
-            - "Recursos Humanos", "Gestão de Pessoas"
-            - "Dados Abertos", "Acesso à Informação"
-            - "LAI", "e-SIC", "Ouvidoria"
-        </high_relevance_headers>
-        
-        <medium_relevance_headers>
-            - "Prefeitura", "Município", "Governo"
-            - "Departamentos", "Secretarias", "Órgãos"
-            - "Administração", "Gestão Pública"
-            - "Consultas", "Pesquisas", "Busca"
-        </medium_relevance_headers>
+            <step2>Classifique headers por relevância</step2>
+            <high_relevance_headers>
+                - "Transparência", "Portal da Transparência"
+                - "Folha de Pagamento", "Remuneração", "Salários"
+                - "Servidores Públicos", "Quadro de Pessoal"
+                - "Recursos Humanos", "Gestão de Pessoas"
+                - "Dados Abertos", "Acesso à Informação"
+                - "LAI", "e-SIC", "Ouvidoria"
+            </high_relevance_headers>
+            
+            <medium_relevance_headers>
+                - "Prefeitura", "Município", "Governo"
+                - "Departamentos", "Secretarias", "Órgãos"
+                - "Administração", "Gestão Pública"
+                - "Consultas", "Pesquisas", "Busca"
+            </medium_relevance_headers>
 
-        <step3>Analise contexto semântico</step3>
-        - Headers indicam seção atual da página?
-        - Sugerem navegação para outras seções?
-        - Confirmam ou contradizem tipo da página?
-        - Fornecem pistas sobre funcionalidades disponíveis?
+            <step3>Analise contexto semântico</step3>
+            - Headers indicam seção atual da página?
+            - Sugerem navegação para outras seções?
+            - Confirmam ou contradizem tipo da página?
+            - Fornecem pistas sobre funcionalidades disponíveis?
 
-        <step4>Use headers para calibrar classificação</step4>
-        SE headers indicam claramente contexto salarial = +0.1 confiança
-        SE headers indicam transparência genérica = +0.05 confiança
-        SE headers não relacionados a transparência = -0.1 confiança
+            <step4>Use headers para calibrar classificação</step4>
+            SE headers indicam claramente contexto salarial = +0.1 confiança
+            SE headers indicam transparência genérica = +0.05 confiança
+            SE headers não relacionados a transparência = -0.1 confiança
         </header_analysis_protocol>
-        ATENÇÃO ESPECIAL: Muitas páginas mostram tabelas VAZIAS com colunas preparadas para dados salariais + formulários de busca.
+        
+        <form_detection_protocol>
+            ATENÇÃO ESPECIAL: Muitas páginas mostram tabelas VAZIAS com colunas preparadas para dados salariais + formulários de busca.
 
-        INDICADORES DE FORMULÁRIOS COM DADOS OCULTOS:
-        ✅ Tabela vazia com colunas: "Nome", "Cargo", "Salário", "Remuneração"
-        ✅ Formulário de busca/filtro com campos como: "Nome", "CPF", "Período", "Órgão"
-        ✅ Botões "Pesquisar", "Buscar", "Consultar", "Filtrar"
-        ✅ Mensagens como "Informe os critérios de busca", "Selecione os filtros"
-        ✅ Campos obrigatórios (*) para realizar consulta
-        ✅ Dropdowns com opções de órgãos, secretarias, departamentos
+            INDICADORES DE FORMULÁRIOS COM DADOS OCULTOS:
+            ✅ Tabela vazia com colunas: "Nome", "Cargo", "Salário", "Remuneração"
+            ✅ Formulário de busca/filtro com campos como: "Nome", "CPF", "Período", "Órgão"
+            ✅ Botões "Pesquisar", "Buscar", "Consultar", "Filtrar"
+            ✅ Mensagens como "Informe os critérios de busca", "Selecione os filtros"
+            ✅ Campos obrigatórios (*) para realizar consulta
+            ✅ Dropdowns com opções de órgãos, secretarias, departamentos
 
-        SE encontrar tabela vazia + formulário = PAGINA_COM_DADOS_DE_SALARIOS (marcar tem_formulario_busca_salarios = true)
+            SE encontrar tabela vazia + formulário = PAGINA_COM_DADOS_DE_SALARIOS_PENDENTE (marcar tem_formulario_busca_salarios = true)
         </form_detection_protocol>
 
         <error_prevention>
         NÃO FAÇA ISSO - Erros críticos a evitar:
-        ❌ Não retorne URLs relativas (ex: "/portal/transparencia")
+        ❌ Não retorne URLs relativas (ex: "/portal/transparencia")PAGINA_COM_DADOS_DE_SALARIOS
         ❌ Não classifique incorretamente páginas com listagem de funcionários
         ❌ Não ignore dados salariais presentes na página
         ❌ Não ignore formulários que podem revelar dados salariais
@@ -207,6 +230,17 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
             </negative_indicators>
             <confidence_range>0.95-1.0 (dados visíveis) | 0.85-0.95 (formulários)</confidence_range>
         </category>
+        
+        <category name="PAGINA_COM_DADOS_DE_SALARIOS_PENDENTE" priority="ALTA">
+            <definition>Características similares a PAGINA_COM_DADOS_DE_SALARIOS mas que não apresenta nenhum dado porque a pagina está esperando uma ação do usuário</definition>
+            <positive_indicators>
+                - Tem um formulário de entrada de dados para ser usado com filtros
+                - Tem um botão de Submit ou então de Pesquisa
+            </positive_indicators>
+            <negative_indicators>
+                - A tabela está populada com pelo menos um servidor
+            </negative_indicators>
+        </category>
 
         <category name="PAGINA_COM_LISTAGEM_FUNCIONARIOS" priority="MÉDIA">
             <definition>Página com listagem de servidores públicos incluindo nomes/cargos MAS SEM dados salariais ou capacidade de busca salarial</definition>
@@ -229,6 +263,17 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
                 - Formulários que podem revelar salários
             </negative_indicators>
             <confidence_range>0.85-0.94</confidence_range>
+        </category>
+        
+        <category name="PAGINA_COM_LISTAGEM_FUNCIONARIOS_PENDENTE" priority="ALTA">
+            <definition>Características similares a PAGINA_COM_LISTAGEM_FUNCIONARIOS mas que não apresenta nenhum dado porque a pagina está esperando uma ação do usuário</definition>
+            <positive_indicators>
+                - Tem um formulário de entrada de dados para ser usado com filtros
+                - Tem um botão de Submit ou então de Pesquisa
+            </positive_indicators>
+            <negative_indicators>
+                - A tabela está populada com pelo menos um servidor
+            </negative_indicators>
         </category>
 
         <category name="PAGINA_CAMINHO" priority="MÉDIA">
@@ -307,7 +352,49 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
         </hidden_elements>
         </search_strategy>
 
-        <form_analysis_protocol>
+        <action_specification_protocol>
+        AÇÕES ESPECÍFICAS PARA PRÓXIMOS PASSOS:
+
+        <for_pagina_com_dados_salarios>
+        SE dados visíveis:
+        - "Extrair dados da tabela na posição [linha X, coluna Y]"
+        - "Coletar dados das linhas [X-Y] da tabela principal"
+        - "Fazer scraping dos valores monetários na coluna [nome_coluna]"
+        
+        SE formulário presente:
+        - "Clicar no botão [texto_exato] localizado em [posição]"
+        - "Preencher campo [nome_campo] com valor [sugestão]"
+        - "Selecionar dropdown [id/name] e escolher opção [texto_opção]"
+        - "Submeter formulário usando botão [tipo] com texto '[texto]'"
+        - "Aguardar carregamento após submit e extrair tabela resultante"
+        </for_pagina_com_dados_salarios>
+
+        <for_pagina_caminho>
+        - "Clicar no link '[texto_exato]' que leva para [URL_absoluta]"
+        - "Abrir menu dropdown '[texto_menu]' e selecionar '[texto_subitem]'"
+        - "Navegar para seção '[nome_seção]' usando link/botão '[elemento_específico]'"
+        - "Acessar submenu '[caminho_completo]' através de hover/click"
+        - "Seguir breadcrumb '[sequência]' até página desejada"
+        </for_pagina_caminho>
+
+        <for_pagina_listagem_funcionarios>
+        - "Analisar se existe campo de busca para filtrar por salário"
+        - "Verificar se há links individuais para cada servidor"
+        - "Procurar por aba/seção adicional 'Remuneração' na mesma página"
+        - "Investigar se dados salariais estão em página separada linkada"
+        </for_pagina_listagem_funcionarios>
+
+        <javascript_actions>
+        SE necessita_javascript = true:
+        - "Executar JavaScript para revelar menu: [código_específico]"
+        - "Trigger evento [tipo_evento] no elemento [seletor]"
+        - "Aguardar carregamento dinâmico de [tempo] segundos"
+        - "Interagir com elemento que aparece após [ação_prévia]"
+        </javascript_actions>
+
+        FORMATO OBRIGATÓRIO para contexto_para_proximo_passo:
+        "AÇÃO: [verbo_específico] + ELEMENTO: [identificação_precisa] + LOCALIZAÇÃO: [posição_exata] + OBJETIVO: [resultado_esperado]"
+        </action_specification_protocol>
         PROTOCOLO ESPECIAL PARA FORMULÁRIOS:
 
         <step1>Identifique tabelas vazias com headers relacionados a salários</step1>
@@ -365,6 +452,8 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
         ✓ Extraí e analisei TODOS os headers (h1-h6) da página?
         ✓ Usei o contexto dos headers para entender o propósito da página?
         ✓ Procurei por tabelas, formulários e listas?
+        ✓ Consegui enontrar exemplos de nomes de funcionários presentes na página?
+        ✓ Consegui enontrar exemplos de salários de funcionários presentes na página?
         ✓ Verifiquei se tabelas vazias têm formulários associados?
         ✓ Identifiquei botões de busca e campos obrigatórios?
         ✓ Verifiquei menus, rodapés e elementos de navegação?
@@ -386,12 +475,15 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
                 "tipo_da_pagina": "PAGINA_COM_DADOS_DE_SALARIOS|PAGINA_COM_LISTAGEM_FUNCIONARIOS|PAGINA_CAMINHO|PAGINA_SEM_INFORMACAO_RELEVANTE",
                 "justificativa_classificacao": "explicação detalhada do por que foi classificada nesta categoria",
                 "confianca_classificacao": float_entre_0_e_1,
+                "exemplo_nome_servidor": "nome de um servidor público presente na página",
+                "exemplo_salario_servidor": "exemplo de nome e salário de um servidor para garantir que de fato é possível extrair essas informações da página",
                 "tem_dados_salariais_visiveis": boolean,
                 "tem_formulario_busca_salarios": boolean,
                 "tem_listagem_funcionarios_sem_salario": boolean,
                 "tem_links_servidores": boolean,
                 "tem_tabela_com_relacao_nome_salario": boolean,
-                "elementos_relevantes_encontrados": ["lista", "de", "elementos", "encontrados"],
+                "headers_encontrados": ["lista", "de", "todos", "headers", "h1-h6", "encontrados"],
+                "contexto_semantico_headers": "análise do contexto fornecido pelos títulos da página",
                 "links_encontrados": [
                     {{
                         "texto": "texto exato do link/botão",
@@ -403,7 +495,7 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
                         "requer_javascript": boolean
                     }}
                 ],
-                "termos_identificados": ["lista", "de", "termos", "relevantes", "encontrados"],
+                "elementos_relevantes_encontrados": ["lista", "de", "elementos", "encontrados"],
                 "localizacao_na_pagina": "menu_superior|sidebar|centro|rodape|multiplas_localizacoes",
                 "necessita_javascript": boolean,
                 "nivel_dificuldade_navegacao": "facil|medio|dificil",
@@ -415,7 +507,7 @@ def create_prompts(url, html_content, max_content_size: int = 50000):
         <final_reminders>
         LEMBRE-SE SEMPRE:
         • Você está analisando: {url}
-        • Classificação obrigatória: PAGINA_COM_DADOS_DE_SALARIOS | PAGINA_COM_LISTAGEM_FUNCIONARIOS | PAGINA_CAMINHO | PAGINA_SEM_INFORMACAO_RELEVANTE
+        • Classificação obrigatória: PAGINA_COM_DADOS_DE_SALARIOS | PAGINA_COM_LISTAGEM_FUNCIONARIOS | PAGINA_CAMINHO | PAGINA_SEM_INFORMACAO_RELEVANTE | PAGINA_COM_DADOS_DE_SALARIOS_PENDENTE | PAGINA_COM_LISTAGEM_FUNCIONARIOS_PENDENTE
         • URLs devem ser SEMPRE absolutas (começar com http/https)
         • ATENÇÃO ESPECIAL: Tabelas vazias + formulários podem conter dados salariais ocultos
         • Sua análise é CRÍTICA para o sucesso do workflow de extração
@@ -435,6 +527,10 @@ class TipoPagina(str, Enum):
     PAGINA_COM_LISTAGEM_FUNCIONARIOS = "PAGINA_COM_LISTAGEM_FUNCIONARIOS"
     PAGINA_CAMINHO = "PAGINA_CAMINHO"
     PAGINA_SEM_INFORMACAO_RELEVANTE = "PAGINA_SEM_INFORMACAO_RELEVANTE"
+    PAGINA_COM_DADOS_DE_SALARIOS_PENDENTE = "PAGINA_COM_DADOS_DE_SALARIOS_PENDENTE"
+    PAGINA_COM_LISTAGEM_FUNCIONARIOS_PENDENTE = (
+        "PAGINA_COM_LISTAGEM_FUNCIONARIOS_PENDENTE"
+    )
 
 
 class TipoLink(str, Enum):
@@ -490,6 +586,11 @@ class LinkEncontrado(BaseModel):
     )
 
 
+class ExemploDeNomeSalario(BaseModel):
+    nome: str = Field(..., description="Nome do servidor público")
+    salario: float = Field(..., description="Remuneração do servidor público")
+
+
 class ResultadoBuscaServidores(BaseModel):
     """Modelo principal para resultado da busca de links de servidores públicos"""
 
@@ -500,6 +601,13 @@ class ResultadoBuscaServidores(BaseModel):
     )
     confianca_classificacao: float = Field(
         ..., description="Nivel de confiança da classificação, entre 0 e 1"
+    )
+    exemplo_nome_servidor: str | None = Field(
+        ..., description="Nome de um servidor na página"
+    )
+    exemplo_salario_servidor: ExemploDeNomeSalario | None = Field(
+        ...,
+        description="Exemplo de salário de um servidor para garantir que é possível obter dados de salário da página",
     )
     tem_dados_salariais_visiveis: bool = Field(
         ...,
@@ -520,11 +628,16 @@ class ResultadoBuscaServidores(BaseModel):
         ...,
         description="Indica se há tabela html com relação entre nomes de servidores e seus salários na pagina",
     )
+    headers_encontrados: List[str] = Field(
+        default_factory=list,
+        description="Lista de todos os headers (h1-h6) encontrados na página",
+    )
+    contexto_semantico_headers: str | None = Field(
+        None,
+        description="Análise do contexto semântico fornecido pelos títulos da página",
+    )
     elementos_relevantes_encontrados: list[str] = Field(
         ..., description="Lista com as strings das tags html relevantes encontradas"
-    )
-    links_encontrados: List[LinkEncontrado] | None = Field(
-        default_factory=list, description="Lista de links encontrados"
     )
     termos_identificados: List[str] | None = Field(
         default_factory=list, description="Termos relevantes identificados na página"
