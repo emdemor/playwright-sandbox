@@ -3,6 +3,7 @@ import random
 from typing import Literal
 
 from fake_useragent import UserAgent
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from .config import browser_settings
 from .proxies import get_masked_proxy
@@ -129,3 +130,52 @@ async def do_movements(page):
             steps=random.randint(1, 4),
         )
         await asyncio.sleep(random.uniform(0.05, 0.1))
+
+
+async def navigate_with_retry(page, url, timeouts: int = [30000, 60000, 90000]):
+    """
+    Navega para uma URL com mecanismo de retry progressivo.
+
+    Estratégia:
+    1. Tenta 3 vezes com "networkidle" com timeouts crescentes: 10s, 30s, 90s
+    2. Se todas falharem, tenta com "domcontentloaded" (90s timeout)
+    3. Se falhar, tenta com "load" (90s timeout)
+
+    Args:
+        page: Instância da página do Playwright
+        url: URL de destino
+
+    Returns:
+        None
+
+    Raises:
+        PlaywrightTimeoutError: Se todas as tentativas falharem
+    """
+
+    for attempt, timeout in enumerate(timeouts, 1):
+        try:
+            print(f"Tentativa {attempt}/3 com 'networkidle' (timeout: {timeout}ms)")
+            await page.goto(url, wait_until="networkidle", timeout=timeout)
+            return  # Sucesso, sai da função
+        except PlaywrightTimeoutError:
+            print(f"Timeout na tentativa {attempt} com 'networkidle'")
+            if attempt == len(timeouts):
+                print("Todas as tentativas com 'networkidle' falharam")
+
+    # Se chegou aqui, todas as tentativas com networkidle falharam
+    # Tenta com domcontentloaded
+    try:
+        print(f"Tentando com 'domcontentloaded' (timeout: {timeouts[-1]}ms)")
+        await page.goto(url, wait_until="domcontentloaded", timeout=timeouts[-1])
+        return  # Sucesso, sai da função
+    except PlaywrightTimeoutError:
+        print("Timeout com 'domcontentloaded'")
+
+    # Última tentativa com load
+    try:
+        print(f"Tentando com 'load' (timeout: {timeouts[-1]}ms)")
+        await page.goto(url, wait_until="load", timeout=timeouts[-1])
+        return  # Sucesso, sai da função
+    except PlaywrightTimeoutError:
+        print("Timeout com 'load' - todas as estratégias falharam")
+        raise  # Re-lança a exceção
