@@ -132,7 +132,7 @@ async def do_movements(page):
         await asyncio.sleep(random.uniform(0.05, 0.1))
 
 
-async def navigate_with_retry(page, url, timeouts: int = [30000, 60000, 90000]):
+async def navigate_with_retry(page, url, timeouts: int = [30000, 60000, 90000], wait_time: int = 3):
     """
     Navega para uma URL com mecanismo de retry progressivo.
 
@@ -153,6 +153,7 @@ async def navigate_with_retry(page, url, timeouts: int = [30000, 60000, 90000]):
     """
 
     for attempt, timeout in enumerate(timeouts, 1):
+        await asyncio.sleep(wait_time)
         try:
             print(f"Tentativa {attempt}/3 com 'networkidle' (timeout: {timeout}ms)")
             await page.goto(url, wait_until="networkidle", timeout=timeout)

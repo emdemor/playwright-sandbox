@@ -14,3 +14,4 @@ asyncpg
 openai
 litellm
 tokencost
+google-generativeai
