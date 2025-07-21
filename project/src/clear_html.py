@@ -3,7 +3,7 @@ import re
 from bs4 import BeautifulSoup, Comment
 
 
-def clean_html_for_llm(
+async def clean_html_for_llm(
     html_content,
     preserve_structure=True,
     max_length=None,

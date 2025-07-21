@@ -132,7 +132,13 @@ async def do_movements(page):
         await asyncio.sleep(random.uniform(0.05, 0.1))
 
 
-async def navigate_with_retry(page, url, timeouts: int = [30000, 60000, 90000], wait_time: int = 3):
+async def navigate_with_retry(
+    page,
+    url,
+    timeouts: int = [30000, 60000, 90000],
+    wait_time: int = 3,
+    strategy_priority=("networkidle", "domcontentloaded", "load"),
+):
     """
     Navega para uma URL com mecanismo de retry progressivo.
 
@@ -155,28 +161,30 @@ async def navigate_with_retry(page, url, timeouts: int = [30000, 60000, 90000], 
     for attempt, timeout in enumerate(timeouts, 1):
         await asyncio.sleep(wait_time)
         try:
-            print(f"Tentativa {attempt}/3 com 'networkidle' (timeout: {timeout}ms)")
-            await page.goto(url, wait_until="networkidle", timeout=timeout)
+            print(
+                f"Tentativa {attempt}/3 com '{strategy_priority[0]}' (timeout: {timeout}ms)"
+            )
+            await page.goto(url, wait_until=strategy_priority[0], timeout=timeout)
             return  # Sucesso, sai da função
         except PlaywrightTimeoutError:
-            print(f"Timeout na tentativa {attempt} com 'networkidle'")
+            print(f"Timeout na tentativa {attempt} com '{strategy_priority[0]}'")
             if attempt == len(timeouts):
-                print("Todas as tentativas com 'networkidle' falharam")
+                print(f"Todas as tentativas com '{strategy_priority[0]}' falharam")
 
     # Se chegou aqui, todas as tentativas com networkidle falharam
     # Tenta com domcontentloaded
     try:
-        print(f"Tentando com 'domcontentloaded' (timeout: {timeouts[-1]}ms)")
-        await page.goto(url, wait_until="domcontentloaded", timeout=timeouts[-1])
+        print(f"Tentando com '{strategy_priority[1]}' (timeout: {timeouts[-1]}ms)")
+        await page.goto(url, wait_until=strategy_priority[1], timeout=timeouts[-1])
         return  # Sucesso, sai da função
     except PlaywrightTimeoutError:
-        print("Timeout com 'domcontentloaded'")
+        print(f"Timeout com '{strategy_priority[1]}'")
 
     # Última tentativa com load
     try:
-        print(f"Tentando com 'load' (timeout: {timeouts[-1]}ms)")
-        await page.goto(url, wait_until="load", timeout=timeouts[-1])
+        print(f"Tentando com '{strategy_priority[2]}' (timeout: {timeouts[-1]}ms)")
+        await page.goto(url, wait_until=f"{strategy_priority[2]}", timeout=timeouts[-1])
         return  # Sucesso, sai da função
     except PlaywrightTimeoutError:
-        print("Timeout com 'load' - todas as estratégias falharam")
+        print(f"Timeout com '{strategy_priority[2]}' - todas as estratégias falharam")
         raise  # Re-lança a exceção

@@ -1,8 +1,18 @@
 import random
 
 import httpx
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from .config import proxy_settings
+
+
+class InvalidProxyError(Exception):
+    pass
 
 
 def get_masked_proxy(proxy_config):
@@ -31,14 +41,48 @@ def get_masked_proxy(proxy_config):
     return proxy_url
 
 
-def get_proxy():
+def print_retry_attempt(retry_state):
+    print(
+        f"🔄 Retry {retry_state.attempt_number} - Erro: {retry_state.outcome.exception()}"
+    )
+    print(f"⏳ Aguardando {retry_state.next_action.sleep:.1f} segundos...")
+
+
+def print_final_result(retry_state):
+    if retry_state.outcome.failed:
+        print(f"❌ Falha final após {retry_state.attempt_number} tentativas")
+    else:
+        print(f"✅ Sucesso na tentativa {retry_state.attempt_number}")
+
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=2, max=16),
+    retry=retry_if_exception_type((InvalidProxyError)),
+    before_sleep=print_retry_attempt,
+    after=print_final_result,
+    reraise=True,
+)
+async def get_proxy(test=False):
     with open(proxy_settings.proxies_file, "r") as f:
         lines = f.readlines()
 
     line = random.choice(lines).strip()
     ip, port, user, password = line.split(":")
 
-    return {"server": f"http://{ip}:{port}", "username": user, "password": password}
+    proxy_config = {
+        "server": f"http://{ip}:{port}",
+        "username": user,
+        "password": password,
+    }
+
+    if test:
+        try:
+            await test_proxy(proxy_config)
+        except Exception as err:
+            raise InvalidProxyError("Invalid proxy config") from err
+
+    return proxy_config
 
 
 async def test_proxy(proxy_config):

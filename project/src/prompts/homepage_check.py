@@ -12,7 +12,6 @@ BRL_CURRENCY = 5.6
 
 
 async def check_homepage(url, html_content, model: str = MODEL, response_format=None):
-
     if not response_format:
         if model == "deepseek/deepseek-chat":
             response_format = {"type": "json_object"}

@@ -15,3 +15,4 @@ openai
 litellm
 tokencost
 google-generativeai
+tenacity
