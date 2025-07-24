@@ -1,6 +1,7 @@
 import random
 
 import httpx
+from loguru import logger
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -42,17 +43,17 @@ def get_masked_proxy(proxy_config):
 
 
 def print_retry_attempt(retry_state):
-    print(
-        f"🔄 Retry {retry_state.attempt_number} - Erro: {retry_state.outcome.exception()}"
+    logger.warning(
+        f"Retry {retry_state.attempt_number} - Erro: {retry_state.outcome.exception()}"
     )
-    print(f"⏳ Aguardando {retry_state.next_action.sleep:.1f} segundos...")
+    logger.warning(f"⏳ Aguardando {retry_state.next_action.sleep:.1f} segundos...")
 
 
 def print_final_result(retry_state):
     if retry_state.outcome.failed:
-        print(f"❌ Falha final após {retry_state.attempt_number} tentativas")
+        logger.warning(f"Falha final após {retry_state.attempt_number} tentativas")
     else:
-        print(f"✅ Sucesso na tentativa {retry_state.attempt_number}")
+        logger.warning(f"Sucesso na tentativa {retry_state.attempt_number}")
 
 
 @retry(
@@ -118,24 +119,24 @@ async def test_proxy(proxy_config):
 
                     safe_server = mask_server(ip) if ip != "N/A" else "N/A"
 
-                    print(
+                    logger.info(
                         f"Proxy funcionando. IP: {safe_server} (testado em {endpoint})"
                     )
                     return True
                 else:
-                    print(
+                    logger.info(
                         f"Endpoint {endpoint} retornou status: {response.status_code}"
                     )
 
             except httpx.TimeoutException:
-                print(f"Timeout no endpoint {endpoint}")
+                logger.error(f"Timeout no endpoint {endpoint}")
                 continue
             except httpx.ProxyError as e:
-                print(f"Erro de proxy no endpoint {endpoint}: {e}")
+                logger.error(f"Erro de proxy no endpoint {endpoint}: {e}")
                 continue
             except Exception as e:
-                print(f"Erro no endpoint {endpoint}: {e}")
+                logger.error(f"Erro no endpoint {endpoint}: {e}")
                 continue
 
-    print("Proxy não funcionou em nenhum endpoint testado")
+    logger.error("Proxy não funcionou em nenhum endpoint testado")
     return False

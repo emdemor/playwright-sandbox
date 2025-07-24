@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup, Comment
 from loguru import logger
 
 
-async def clean_html_for_llm(
+async def clear_html_for_llm(
     html_content,
     preserve_structure=True,
     max_length=None,
@@ -528,7 +528,7 @@ def clean_html_for_classification(html_content, aggressive_cleaning=True):
         "keep_semantic_attrs": aggressive_cleaning,
     }
 
-    result = clean_html_for_llm(html_content, **cleaning_options)
+    result = clear_html_for_llm(html_content, **cleaning_options)
 
     if aggressive_cleaning:
         # Segunda passada: limpeza ultra-minimal
@@ -591,9 +591,9 @@ def compare_cleaning_methods(html_content):
     original_size = len(html_content)
 
     methods = {
-        "padrao": clean_html_for_llm(html_content, remove_classes=False),
-        "sem_classes": clean_html_for_llm(html_content, remove_classes=True),
-        "semantico_puro": clean_html_for_llm(
+        "padrao": clear_html_for_llm(html_content, remove_classes=False),
+        "sem_classes": clear_html_for_llm(html_content, remove_classes=True),
+        "semantico_puro": clear_html_for_llm(
             html_content, remove_classes=True, keep_semantic_attrs=True
         ),
         "ultra_minimal": {"cleaned_html": clean_html_ultra_minimal(html_content)},
@@ -623,3 +623,217 @@ def compare_cleaning_methods(html_content):
         }
 
     return comparison
+
+
+def prettify_html(html_content, indent=2):
+    """
+    Formata HTML removendo styles, scripts e imagens, retornando uma string prettified.
+
+    Parâmetros:
+    - html_content: String com o conteúdo HTML
+    - indent: Número de espaços para indentação (padrão: 2)
+
+    Retorna:
+    - String com HTML formatado e limpo
+    """
+
+    # Parse do HTML com BeautifulSoup
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    # Remove tags <style> e seu conteúdo
+    for style in soup.find_all("style"):
+        style.decompose()
+
+    # Remove tags <script> e seu conteúdo
+    for script in soup.find_all("script"):
+        script.decompose()
+
+    # Remove tags <img> e seu conteúdo
+    for img in soup.find_all("img"):
+        img.decompose()
+
+    # Remove tags <picture> e seu conteúdo (imagens responsivas)
+    for picture in soup.find_all("picture"):
+        picture.decompose()
+
+    # Remove tags <svg> e seu conteúdo (imagens SVG)
+    for svg in soup.find_all("svg"):
+        svg.decompose()
+
+    # Remove atributos style de todas as tags
+    for tag in soup.find_all():
+        if tag.get("style"):
+            del tag["style"]
+
+        # Remove atributos de eventos JavaScript (onclick, onload, etc.)
+        attrs_to_remove = []
+        for attr in tag.attrs:
+            if attr.startswith("on"):
+                attrs_to_remove.append(attr)
+
+        for attr in attrs_to_remove:
+            del tag[attr]
+
+    # Gera HTML prettified
+    pretty_html = soup.prettify()
+
+    # Ajusta indentação se necessário
+    if indent != 1:  # BeautifulSoup usa 1 espaço por padrão
+        lines = pretty_html.split("\n")
+        adjusted_lines = []
+
+        for line in lines:
+            if line.strip():  # Só processa linhas não vazias
+                # Conta espaços no início
+                leading_spaces = len(line) - len(line.lstrip())
+                # Recalcula com a indentação desejada
+                new_indent = leading_spaces * indent
+                adjusted_lines.append(" " * new_indent + line.lstrip())
+            else:
+                adjusted_lines.append(line)
+
+        pretty_html = "\n".join(adjusted_lines)
+
+    # Remove linhas vazias extras
+    lines = pretty_html.split("\n")
+    cleaned_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        # Pula linhas vazias, mas mantém estrutura
+        if stripped or (cleaned_lines and cleaned_lines[-1].strip()):
+            cleaned_lines.append(line)
+
+    # Remove linhas vazias consecutivas
+    final_lines = []
+    prev_empty = False
+
+    for line in cleaned_lines:
+        is_empty = not line.strip()
+        if not (is_empty and prev_empty):
+            final_lines.append(line)
+        prev_empty = is_empty
+
+    # Remove linhas vazias no início e fim
+    while final_lines and not final_lines[0].strip():
+        final_lines.pop(0)
+    while final_lines and not final_lines[-1].strip():
+        final_lines.pop()
+
+    result = "\n".join(final_lines)
+
+    # Remove declarações desnecessárias do BeautifulSoup se existirem
+    if result.startswith("<!DOCTYPE html>"):
+        result = result
+    else:
+        # Remove apenas tags html/body/head vazias se foram adicionadas automaticamente
+        result = re.sub(r"^\s*<html>\s*<body>\s*", "", result)
+        result = re.sub(r"\s*</body>\s*</html>\s*$", "", result)
+
+    return result.strip()
+
+
+def prettify_html_fragment(html_content, indent=2):
+    """
+    Versão para fragmentos HTML (sem adicionar html/body tags).
+
+    Parâmetros:
+    - html_content: String com fragmento HTML
+    - indent: Número de espaços para indentação (padrão: 2)
+
+    Retorna:
+    - String com HTML formatado e limpo
+    """
+
+    # Parse como fragmento
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    # Remove tags <style> e seu conteúdo
+    for style in soup.find_all("style"):
+        style.decompose()
+
+    # Remove tags <script> e seu conteúdo
+    for script in soup.find_all("script"):
+        script.decompose()
+
+    # Remove tags <img> e seu conteúdo
+    for img in soup.find_all("img"):
+        img.decompose()
+
+    # Remove tags <picture> e seu conteúdo
+    for picture in soup.find_all("picture"):
+        picture.decompose()
+
+    # Remove tags <svg> e seu conteúdo
+    for svg in soup.find_all("svg"):
+        svg.decompose()
+
+    # Remove atributos style e eventos JavaScript
+    for tag in soup.find_all():
+        if tag.get("style"):
+            del tag["style"]
+
+        attrs_to_remove = [attr for attr in tag.attrs if attr.startswith("on")]
+        for attr in attrs_to_remove:
+            del tag[attr]
+
+    # Para fragmentos, formata cada elemento separadamente
+    result_parts = []
+    indent_str = " " * indent
+
+    def format_element(element, current_indent=0):
+        if element.name is None:  # Texto
+            text = str(element).strip()
+            if text:
+                return indent_str * current_indent + text
+            return ""
+
+        # Tag de abertura
+        attrs = []
+        for attr, value in element.attrs.items():
+            if isinstance(value, list):
+                value = " ".join(value)
+            attrs.append(f'{attr}="{value}"')
+
+        attr_str = " " + " ".join(attrs) if attrs else ""
+
+        # Tags auto-fechadas
+        if element.name in ["br", "hr", "img", "input", "meta", "link"]:
+            return f"{indent_str * current_indent}<{element.name}{attr_str}/>"
+
+        result = f"{indent_str * current_indent}<{element.name}{attr_str}>"
+
+        # Conteúdo interno
+        if element.contents:
+            inline_tags = ["a", "span", "strong", "em", "b", "i", "u", "code", "small"]
+            is_inline = element.name in inline_tags
+
+            if (
+                is_inline
+                and len(element.contents) == 1
+                and element.contents[0].name is None
+            ):
+                # Tag inline com apenas texto
+                text = str(element.contents[0]).strip()
+                result += text + f"</{element.name}>"
+            else:
+                # Tag block ou com múltiplos elementos
+                for child in element.contents:
+                    child_formatted = format_element(child, current_indent + 1)
+                    if child_formatted:
+                        result += "\n" + child_formatted
+
+                result += f"\n{indent_str * current_indent}</{element.name}>"
+        else:
+            result += f"</{element.name}>"
+
+        return result
+
+    # Formata cada elemento raiz
+    for element in soup.contents:
+        if hasattr(element, "name") or str(element).strip():
+            formatted = format_element(element)
+            if formatted:
+                result_parts.append(formatted)
+
+    return "\n".join(result_parts)

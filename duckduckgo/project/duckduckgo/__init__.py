@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal
+from typing import Literal, Optional
 from urllib.parse import quote_plus, urlencode
 
 import bs4
@@ -14,9 +14,9 @@ from tenacity import (
     wait_exponential,
 )
 
-from ....browser import navigate_with_retry, set_browser, set_context, set_page
-from ....clear_html import clean_html_for_llm
-from ....proxies import get_proxy
+from .browser import navigate_with_retry, set_browser, set_context, set_page
+from .clear_html import clear_html_for_llm
+from .proxies import get_proxy
 
 
 class SearchResult(BaseModel):
@@ -129,94 +129,125 @@ async def _get_search_html(
         return html_content
 
 
+async def _parse_single_web_article(article: bs4.element.Tag) -> list[SearchResult]:
+    """Processa um único artigo de forma assíncrona"""
+    try:
+        links = article.find_all("a", {"data-testid": "result-extras-url-link"})
+        links = [link.find("div").text for link in links]
+
+        titles = article.find_all("a", {"data-testid": "result-title-a"})
+        titles = [title.find("span").text for title in titles]
+
+        snippets = article.find_all("div", {"data-result": "snippet"})
+        snippets = [snippet.find("span").text for snippet in snippets]
+
+        source = [
+            p.text
+            for d1 in article.find_all("div")
+            for d2 in d1.find_all("div")
+            for d3 in d2.find_all("div")
+            for p in d3.find_all("p")
+            if not len(p.find_all("span"))
+        ]
+
+        result = [
+            SearchResult(search_type="web", link=lks, title=t, snippet=s1, source=s2)
+            for lks, t, s1, s2 in zip(links, titles, snippets, source)
+        ]
+
+        return result
+    except Exception as err:
+        raise ParseWebArticleError(article) from err
+
+
 async def _parse_web_articles(articles: list[bs4.element.Tag]) -> list[SearchResult]:
+    article_results = await asyncio.gather(
+        *[_parse_single_web_article(article) for article in articles]
+    )
     results = []
-    for article in articles:
-        try:
-            links = article.find_all("a", {"data-testid": "result-extras-url-link"})
-            links = [link.find("div").text for link in links]
-
-            titles = article.find_all("a", {"data-testid": "result-title-a"})
-            titles = [title.find("span").text for title in titles]
-
-            snippets = article.find_all("div", {"data-result": "snippet"})
-            snippets = [snippet.find("span").text for snippet in snippets]
-
-            source = [
-                p.text
-                for d1 in article.find_all("div")
-                for d2 in d1.find_all("div")
-                for d3 in d2.find_all("div")
-                for p in d3.find_all("p")
-                if not len(p.find_all("span"))
-            ]
-
-            result = [
-                SearchResult(
-                    search_type="web", link=lks, title=t, snippet=s1, source=s2
-                )
-                for lks, t, s1, s2 in zip(links, titles, snippets, source)
-            ]
-
-            results.extend(result)
-        except Exception as err:
-            raise ParseWebArticleError(article) from err
+    for article_result in article_results:
+        results.extend(article_result)
 
     return results
 
 
-async def _parse_news_articles(articles: list[bs4.element.Tag]) -> list[SearchResult]:
-    results = []
-    for article in articles:
+async def _parse_single_news_article(
+    article: bs4.element.Tag,
+) -> Optional[SearchResult]:
+    """Processa um único artigo de notícia de forma assíncrona"""
+    try:
+        # Extração do link
         try:
-            try:
-                tags_a = article.find_all("a")
-                link = tags_a[0].get("href")
-            except IndexError:
-                link = None
+            tags_a = article.find_all("a")
+            link = tags_a[0].get("href")
+        except IndexError:
+            link = None
 
-            try:
-                tags_h2 = article.find_all("h2")
-                title = tags_h2[0].text
-            except IndexError:
-                title = None
+        # Extração do título
+        try:
+            tags_h2 = article.find_all("h2")
+            title = tags_h2[0].text
+        except IndexError:
+            title = None
 
-            try:
-                tags_span = article.find_all("span")
-                source = tags_span[0].text
-            except IndexError:
-                source = None
+        # Extração da fonte
+        try:
+            tags_span = article.find_all("span")
+            source = tags_span[0].text
+        except IndexError:
+            source = None
 
-            try:
-                divs_with_text = [
-                    div
-                    for div in article.find_all("div")
-                    if not div.find_all() and div.get_text(strip=True)
-                ]
-                times = [div.text for div in divs_with_text if "ago" in str(div)]
-                relative_time = times[0]
-            except IndexError:
-                relative_time = None
+        # Extração do tempo relativo
+        try:
+            divs_with_text = [
+                div
+                for div in article.find_all("div")
+                if not div.find_all() and div.get_text(strip=True)
+            ]
+            times = [div.text for div in divs_with_text if "ago" in str(div)]
+            relative_time = times[0]
+        except IndexError:
+            relative_time = None
 
-            try:
-                tags_p = article.find_all("p")
-                snippet = tags_p[0].text
-            except IndexError:
-                snippet = None
+        # Extração do snippet
+        try:
+            tags_p = article.find_all("p")
+            snippet = tags_p[0].text
+        except IndexError:
+            snippet = None
 
-            result = SearchResult(
-                search_type="news",
-                link=link,
-                title=title,
-                source=source,
-                snippet=snippet,
-                relative_time=relative_time,
-            )
+        result = SearchResult(
+            search_type="news",
+            link=link,
+            title=title,
+            source=source,
+            snippet=snippet,
+            relative_time=relative_time,
+        )
 
-            if result.link:
-                results.append(result)
-        except Exception as err:
-            raise ParseNewsArticleError(article) from err
+        # Retorna o resultado apenas se tiver link
+        return result if result.link else None
+
+    except Exception as err:
+        raise ParseNewsArticleError(article) from err
+
+
+async def _parse_news_articles(articles: list[bs4.element.Tag]) -> list[SearchResult]:
+    """Processa todos os artigos de notícia de forma paralela usando asyncio.gather()"""
+
+    article_results = await asyncio.gather(
+        *[_parse_single_news_article(article) for article in articles],
+        return_exceptions=True,
+    )
+
+    # Filtra resultados válidos e trata exceções
+    results = []
+    for result in article_results:
+        if isinstance(result, Exception):
+            logger.warning(f"Erro ao processar artigo: {result}")
+            continue
+        elif result is not None:  # Resultado válido com link
+            results.append(result)
 
     return results
 
@@ -240,7 +271,7 @@ async def _parse_articles(
 async def _get_articles_from_html(
     search_type: str, html_content: str
 ) -> list[bs4.element.Tag]:
-    clean_html = (await clean_html_for_llm(html_content))["cleaned_html"]
+    clean_html = (await clear_html_for_llm(html_content))["cleaned_html"]
     soup = BeautifulSoup(clean_html, "html.parser")
 
     match search_type:
